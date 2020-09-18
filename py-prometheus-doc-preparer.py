@@ -66,62 +66,58 @@ class py_prometheus_metric_doc_preparer(object):
                 'jobs': set(),
             }
 
-        # thread_local = threading.local()
+        thread_local = threading.local()
 
-        # def get_session():
-        #     if not hasattr(thread_local, "session"):
-        #         thread_local.session = requests.Session()
-        #     return thread_local.session
+        def get_session():
+            if not hasattr(thread_local, "session"):
+                thread_local.session = requests.Session()
+            return thread_local.session
 
-        # def download_site(url):
-        #     session = get_session()
-        #     with session.get(url) as response:
-        #         print(f"Read {len(response.content)} from {url}")
+        def download_data(url):
+            session = get_session()
+            with session.get(url) as response:
+                return response
 
-        # def download_all_sites(sites):
-        #     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        #         executor.map(download_site, sites)
+        def download_parallel(urls, info):
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                return list(tqdm(executor.map(download_data, urls), total=len(urls), desc=info))
 
         detailed_metrics = defaultdict(new_metrics_grup)
         GROUP_KEY = '__name__'
-
-        session = requests.session()
-
-        # detail_requests = list()
-        # metadata_requests = list()
+        detail_requests = list()
+        metadata_requests = list()
 
         # array[start:stop:step]
-        for metric in tqdm(self.__metrics[100:110:]):
+        for metric in tqdm(self.__metrics[::], desc="List of requests"):
             for address in self.__args.metrics_address:
-                details = f"{address}/api/v1/query?query={metric}"
-                metadata = f"{address}/api/v1/targets/metadata?metric={metric}"
+                detail_requests.append(f"{address}/api/v1/query?query={metric}")
+                metadata_requests.append(f"{address}/api/v1/targets/metadata?metric={metric}")
 
+        for r in download_parallel(detail_requests, "Detail info"):
+            #TODO: add exception if not jsonable
+            if r.status_code == 200 and r.json()['status'] == 'success':
+                for result in r.json()['data']['result']:
+                    group = result['metric'].pop(GROUP_KEY)
+                    for label, value in result['metric'].items():
+                        detailed_metrics[group]['labels'][label].add(value)
+                    detailed_metrics[group]['freshness'].add(result['value'][0])
 
-                r = session.get(details)
-                m = session.get(metadata)
-
-                #TODO: add exception if not jsonable
-                if r.status_code == 200 and r.json()['status'] == 'success':
-                    for result in r.json()['data']['result']:
-                        group = result['metric'].pop(GROUP_KEY)
-                        for label, value in result['metric'].items():
-                            detailed_metrics[group]['labels'][label].add(value)
-                        detailed_metrics[group]['freshness'].add(result['value'][0])
-
-                if m.status_code == 200 and m.json()['status'] == 'success':
-                    for result in m.json()['data']:
-                        detailed_metrics[group]['metric_type'].add(result['type'])
-                        detailed_metrics[group]['help'].add(result['help'])
-                        detailed_metrics[group]['found_in'].add(result['target']['instance'])
-                        detailed_metrics[group]['jobs'].add(result['target']['job'])
+        #TODO: check afailability of those informations
+        for m in download_parallel(metadata_requests, "Metadata info"):
+            if m.status_code == 200 and m.json()['status'] == 'success':
+                for result in m.json()['data']:
+                    detailed_metrics[group]['metric_type'].add(result['type'])
+                    detailed_metrics[group]['help'].add(result['help'])
+                    detailed_metrics[group]['found_in'].add(result['target']['instance'])
+                    detailed_metrics[group]['jobs'].add(result['target']['job'])
 
         return detailed_metrics
 
     def __generate_md_doc(self) -> bool:
         with open("prometheus_metric_report.md","w") as f:
             id = 1
-            f.write(f"# Metrics report [{time.strftime('%H:%M %d-%m-%Y')}]\n\n")
-            for metric, value in self.__detailed_metrics.items():
+            f.write(f"# Metric report [{time.strftime('%d-%m-%Y %H:%M')}]\n\n")
+            for metric, value in tqdm(self.__detailed_metrics.items(), desc="MD creation"):
                 #METRIC NAME
                 f.write(f"## {id}) {str(metric)}\n\n")
                 id+=1
@@ -144,20 +140,20 @@ class py_prometheus_metric_doc_preparer(object):
                 #TABLE with labels and counters
                 f.write(f"### Labels\n\n")
                 f.write("| Label | Size | Values |\n")
-                f.write("| :--- | :--- | :--- |\n")
+                f.write("| :--- | :---: | :--- |\n")
                 for label, v in value['labels'].items():
-                    f.write(f"| {label} | {len(v)} | {list(v)[:self.__args.label_limit:]}{'*'*(len(v) > self.__args.label_limit)} |\n\n\n")
-                f.write(f"---\n\n")
+                    f.write(f"| {label} | {len(v)} | {list(v)[:self.__args.label_limit:]}{'<br>__MORE DATA BUT TURNCATED__'*(len(v) > self.__args.label_limit)} |\n")
+                f.write(f"\n---\n\n")
 
         return True
 
     def __generate_pdf_doc(self) -> bool:
         input_filename = 'prometheus_metric_report.md'
         output_filename = 'prometheus_metric_report.pdf'
-        options = {'quiet': ''}
+        options = {'quiet': '', 'footer-right': '[page] of [topage]', 'zoom': 1.5}
 
         with open(input_filename, 'r') as f:
-            html_text = markdown(f.read(), output_format='html5', extensions=['extra', 'tables'])
+            html_text = markdown(f.read(), output_format='html5', extensions=['tables'])
 
         pdfkit.from_string(html_text, output_filename, options=options, css="monospace.css")
         return True
