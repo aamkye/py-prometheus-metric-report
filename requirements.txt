@@ -1,4 +1,3 @@
-docx
 tqdm
 pdfkit
 markdown

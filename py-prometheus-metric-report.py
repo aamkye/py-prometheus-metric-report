@@ -14,19 +14,19 @@ class py_prometheus_metric_doc_preparer(object):
     def __parse_cli_args(self):
         """CLI parser"""
         parser = argparse.ArgumentParser(
-            description='Produce an Ansible Inventory file based on EC2.')
+            description='Produce Prometheus pdf report with markdown middle step')
         parser.add_argument(
             '--metrics-address',
             action='append',
             default=[],
             dest='metrics_address',
-            help='Dont print output to stdout')
+            help='Prometheus API url')
         parser.add_argument(
             '--label-limiter',
             action='store',
             default=20,
             dest='label_limit',
-            help='Dont print output to stdout')
+            help='Label print limit in pdf')
         self.__args = parser.parse_args()
 
     def __init__(self):
