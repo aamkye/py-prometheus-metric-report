@@ -68,19 +68,19 @@ class py_prometheus_metric_doc_preparer(object):
 
         thread_local = threading.local()
 
-        def get_session():
-            if not hasattr(thread_local, "session"):
-                thread_local.session = requests.Session()
-            return thread_local.session
-
-        def download_data(url):
-            session = get_session()
-            with session.get(url) as response:
-                return response
-
         def download_parallel(urls, info):
-            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-                return list(tqdm(executor.map(download_data, urls), total=len(urls), desc=info))
+            def download_data(url):
+                def get_session():
+                    if not hasattr(thread_local, "session"):
+                        thread_local.session = requests.Session()
+                    return thread_local.session
+
+                session = get_session()
+                with session.get(url) as response:
+                    return response
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                return list(tqdm(executor.map(download_data, urls), total=len(urls), desc=info, ascii=True))
 
         detailed_metrics = defaultdict(new_metrics_grup)
         GROUP_KEY = '__name__'
@@ -88,12 +88,12 @@ class py_prometheus_metric_doc_preparer(object):
         metadata_requests = list()
 
         # array[start:stop:step]
-        for metric in tqdm(self.__metrics[::], desc="List of requests"):
+        for metric in tqdm(self.__metrics[::], desc="List of requests", ascii=True):
             for address in self.__args.metrics_address:
                 detail_requests.append(f"{address}/api/v1/query?query={metric}")
                 metadata_requests.append(f"{address}/api/v1/targets/metadata?metric={metric}")
 
-        for r in download_parallel(detail_requests, "Detail info"):
+        for r in tqdm(download_parallel(detail_requests, "Detail info requests"), desc="Parsing detail info", ascii=True):
             #TODO: add exception if not jsonable
             if r.status_code == 200 and r.json()['status'] == 'success':
                 for result in r.json()['data']['result']:
@@ -102,10 +102,10 @@ class py_prometheus_metric_doc_preparer(object):
                         detailed_metrics[group]['labels'][label].add(value)
                     detailed_metrics[group]['freshness'].add(result['value'][0])
 
-        #TODO: check afailability of those informations
-        for m in download_parallel(metadata_requests, "Metadata info"):
+        for m in tqdm(download_parallel(metadata_requests, "Metadata info requests"), desc="Parsing medatada info", ascii=True):
             if m.status_code == 200 and m.json()['status'] == 'success':
                 for result in m.json()['data']:
+                    group = str(m.url).split("=")[1]
                     detailed_metrics[group]['metric_type'].add(result['type'])
                     detailed_metrics[group]['help'].add(result['help'])
                     detailed_metrics[group]['found_in'].add(result['target']['instance'])
@@ -117,33 +117,37 @@ class py_prometheus_metric_doc_preparer(object):
         with open("prometheus_metric_report.md","w") as f:
             id = 1
             f.write(f"# Metric report [{time.strftime('%d-%m-%Y %H:%M')}]\n\n")
-            for metric, value in tqdm(self.__detailed_metrics.items(), desc="MD creation"):
+            for metric, value in tqdm(self.__detailed_metrics.items(), desc="MD creation", ascii=True):
                 #METRIC NAME
                 f.write(f"## {id}) {str(metric)}\n\n")
                 id+=1
 
                 #HELP
-                f.write(f"### Help\n\n{list(value['help']) or 'unavailable'}\n\n")
+                f.write(f"### Help\n\n{list(value['help'] or ['unavailable'])}\n\n")
 
                 #METRIC TYPE
-                f.write(f"### Type\n\n{list(value['metric_type']) or 'unavailable'}\n\n")
+                f.write(f"### Type\n\n{list(value['metric_type'] or ['unavailable'])}\n\n")
 
                 #APPEARS IN JOBS
-                f.write(f"### Appears in jobs\n\n{list(value['jobs']) or 'unavailable'}\n\n")
+                f.write(f"### Appears in jobs\n\n{list(value['jobs'] or ['unavailable'])}\n\n")
 
                 #APPEARS ON INSTANCES
-                f.write(f"### Appears on instances\n\n{list(value['found_in']) or 'unavailable'}\n\n")
+                f.write(f"### Appears on instances\n\n{list(value['found_in'] or ['unavailable'])}\n\n")
 
                 #FRESHNES
-                f.write(f"### Freshness\n\n{format(time.time() - max(value['freshness']), '.2f')}s - {format(time.time() - min(value['freshness']), '.2f')}s\n\n")
+                freshness = list([
+                    str(format(time.time() - max(value['freshness']), '.2f') + 's'),
+                    str(format(time.time() - min(value['freshness']), '.2f') + 's')
+                ])
+                f.write(f"### Freshness\n\n{freshness}\n\n")
 
                 #TABLE with labels and counters
                 f.write(f"### Labels\n\n")
                 f.write("| Label | Size | Values |\n")
-                f.write("| :--- | :---: | :--- |\n")
+                f.write("| --- | --- | --- |\n")
                 for label, v in value['labels'].items():
                     f.write(f"| {label} | {len(v)} | {list(v)[:self.__args.label_limit:]}{'<br>__MORE DATA BUT TURNCATED__'*(len(v) > self.__args.label_limit)} |\n")
-                f.write(f"\n---\n\n")
+                f.write(f"\n\n")
 
         return True
 
