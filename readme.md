@@ -33,6 +33,9 @@ optional arguments:
                         Label print limit in pdf
 ```
 
+## Example
+![Sample page](/examples/example.png)
+
 ## Credits
 
 [@amadeuszkryze](https://github.com/amadeuszkryze)
