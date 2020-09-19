@@ -15,6 +15,8 @@ Also `wkhtmltopdf` will be needed. More info [here](https://github.com/JazzCore/
 
 ## Usage
 
+![Runtime](/examples/runtime.png)
+
 ```bash
 ./py-prometheus-metric-report.py \
   --metrics-address http://prometheus.domain.com:9090 \
