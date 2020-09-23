@@ -19,20 +19,23 @@ Also `wkhtmltopdf` will be needed. More info [here](https://github.com/JazzCore/
 
 ```bash
 ./py-prometheus-metric-report.py \
-  --metrics-address http://prometheus.domain.com:9090 \
-  --metrics-address https://thanos.domain.com
+  -m http://prometheus.domain.com:9090 \
+  -m https://thanos.domain.com
 
-usage: py-prometheus-metric-report.py [-h] [--metrics-address METRICS_ADDRESS]
-                                      [--label-limiter LABEL_LIMIT]
+usage: py-prometheus-metric-report.py [options]
 
-Produce Prometheus pdf report with markdown middle step
+Produce Prometheus markdown documentation and based on that - pdf report.
 
 optional arguments:
   -h, --help            show this help message and exit
-  --metrics-address METRICS_ADDRESS
+  -m METRICS_ADDRESS, --metrics-address METRICS_ADDRESS
                         Prometheus API url
   --label-limiter LABEL_LIMIT
                         Label print limit in pdf
+  --no-pdf              Do not generate pdf
+  --pdf-only            Generate pdf file only
+
+Use wisely..
 ```
 
 ## Example

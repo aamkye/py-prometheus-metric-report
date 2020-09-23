@@ -2,20 +2,24 @@
 
 from collections import defaultdict
 from markdown import markdown
-import threading
-import concurrent.futures
+from markdown.extensions.toc import TocExtension
 from tqdm import tqdm
 import argparse
+import concurrent.futures
 import pdfkit
 import requests
+import threading
 import time
 
 class py_prometheus_metric_doc_preparer(object):
     def __parse_cli_args(self):
         """CLI parser"""
         parser = argparse.ArgumentParser(
-            description='Produce Prometheus pdf report with markdown middle step')
+            description='Produce Prometheus markdown documentation and based on that - pdf report.',
+            usage='%(prog)s [options]',
+            epilog="Use wisely..")
         parser.add_argument(
+            '-m',
             '--metrics-address',
             action='append',
             default=[],
@@ -27,18 +31,32 @@ class py_prometheus_metric_doc_preparer(object):
             default=20,
             dest='label_limit',
             help='Label print limit in pdf')
+        parser.add_argument(
+            '--no-pdf',
+            action='store_true',
+            default=False,
+            dest='no_pdf',
+            help='Do not generate pdf')
+        parser.add_argument(
+            '--pdf-only',
+            action='store_true',
+            default=False,
+            dest='pdf_only',
+            help='Generate pdf file only')
         self.__args = parser.parse_args()
 
     def __init__(self):
         """Main function"""
-
+        self.__parse_cli_args()
         self.__metrics = list()
         self.__detailed_metrics = dict()
-        self.__parse_cli_args()
-        self.__metrics = self.__make_initial_call_for_metrics()
-        self.__detailed_metrics = self.__make_detailed_call_for_metrics()
-        self.__generate_md_doc()
-        self.__generate_pdf_doc()
+
+        if not self.__args.pdf_only:
+            self.__metrics = self.__make_initial_call_for_metrics()
+            self.__detailed_metrics = self.__make_detailed_call_for_metrics()
+            self.__generate_md_doc()
+        if not self.__args.no_pdf:
+            self.__generate_pdf_doc()
 
     def __make_initial_call_for_metrics(self) -> list:
         # For unique list set
@@ -100,7 +118,7 @@ class py_prometheus_metric_doc_preparer(object):
                     group = result['metric'].pop(GROUP_KEY)
                     for label, value in result['metric'].items():
                         detailed_metrics[group]['labels'][label].add(value)
-                    detailed_metrics[group]['freshness'].add(result['value'][0])
+                    detailed_metrics[group]['freshness'].add(result['value'][0] or 0)
 
         for m in tqdm(download_parallel(metadata_requests, "Metadata info requests"), desc="Parsing medatada info", ascii=True):
             if m.status_code == 200 and m.json()['status'] == 'success':
@@ -136,8 +154,8 @@ class py_prometheus_metric_doc_preparer(object):
 
                 #FRESHNES
                 freshness = list([
-                    str(format(time.time() - max(value['freshness']), '.2f') + 's'),
-                    str(format(time.time() - min(value['freshness']), '.2f') + 's')
+                    str(format(time.time() - max(value['freshness'] or [0]), '.2f') + 's'),
+                    str(format(time.time() - min(value['freshness'] or [0]), '.2f') + 's')
                 ])
                 f.write(f"### Freshness\n\n{freshness}\n\n")
 
@@ -157,9 +175,9 @@ class py_prometheus_metric_doc_preparer(object):
         options = {'quiet': '', 'footer-right': '[page] of [topage]', 'zoom': 1.5}
 
         with open(input_filename, 'r') as f:
-            html_text = markdown(f.read(), output_format='html5', extensions=['tables'])
+            html = markdown(f.read(), output_format='html5', extensions=['tables', TocExtension(baselevel=2)])
 
-        pdfkit.from_string(html_text, output_filename, options=options, css="monospace.css")
+        pdfkit.from_string(html, output_filename, options=options, css="styles/monospace.css")
         return True
 
 if __name__ == '__main__':
