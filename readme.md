@@ -13,6 +13,12 @@ pip install -r requirements.txt
 
 Also `wkhtmltopdf` will be needed. More info [here](https://github.com/JazzCore/python-pdfkit).
 
+```
+sudo apt-get install wkhtmltopdf
+or
+brew install caskroom/cask/wkhtmltopdf
+```
+
 ## Usage
 
 ![Runtime](/examples/runtime.png)
