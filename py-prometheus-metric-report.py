@@ -11,6 +11,9 @@ import requests
 import threading
 import time
 
+import urllib3
+urllib3.disable_warnings()
+
 class py_prometheus_metric_doc_preparer(object):
     def __parse_cli_args(self):
         """CLI parser"""
@@ -62,7 +65,7 @@ class py_prometheus_metric_doc_preparer(object):
         # For unique list set
         __metrics = set()
         for address in self.__args.metrics_address:
-            r = requests.get(f"{address}/api/v1/label/__name__/values")
+            r = requests.get(f"{address}/api/v1/label/__name__/values", verify=False)
             if r.json()['status'] == 'success':
                 for metric in r.json()['data']:
                     __metrics.add(metric)
@@ -94,7 +97,7 @@ class py_prometheus_metric_doc_preparer(object):
                     return thread_local.session
 
                 session = get_session()
-                with session.get(url) as response:
+                with session.get(url, verify=False) as response:
                     return response
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
